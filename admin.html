@@ -290,7 +290,6 @@ function playIndex(idx) {
   document.getElementById('yt-frame').style.display = 'block';
 
   // youtube-nocookie + enablejsapi + origin
-  const origin = encodeURIComponent(location.origin);
   const src = `https://www.youtube.com/embed/${vid}?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1&origin=https://daniel505447-del.github.io`;
   document.getElementById('yt-frame').src = src;
 
