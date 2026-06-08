@@ -334,7 +334,13 @@ async function onStateChange(e) {
   }
 }
 
+let isEnding = false;
+
 async function onVideoEnded() {
+  if (isEnding) return;
+  isEnding = true;
+  setTimeout(() => isEnding = false, 3000);
+  
   const autoDel  = document.getElementById('auto-del').checked;
   const autoNext = document.getElementById('auto-next').checked;
   const finishedKey = playlist[currentIndex] ? playlist[currentIndex].key : null;
