@@ -316,6 +316,14 @@ function updateNowInfo() {
 }
 
 // YouTube postMessage로 영상 끝 감지
+// iframe에 주기적으로 상태 요청
+setInterval(() => {
+  const frame = document.getElementById('yt-frame');
+  if (frame && frame.src) {
+    try { frame.contentWindow.postMessage('{"event":"listening","id":1}', '*'); } catch(e){}
+  }
+}, 1000);
+
 window.addEventListener('message', async e => {
   let data;
   try { data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; } catch(ex){ return; }
@@ -329,8 +337,6 @@ window.addEventListener('message', async e => {
 
   if (autoDel && finishedKey) {
     await db.ref('requests/' + finishedKey).remove();
-    // Firebase onValue가 playlist 자동 업데이트
-    // currentIndex 유지 = 삭제 후 같은 위치 = 다음 영상
   }
   if (autoNext) {
     setTimeout(() => {
