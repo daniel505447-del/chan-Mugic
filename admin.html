@@ -309,10 +309,32 @@ function updateNowInfo() {
   document.getElementById('prog').textContent = (currentIndex+1) + ' / ' + playlist.length;
 }
 
-// ── 영상 끝 감지 (YT API onStateChange) ──────────────────
-async function onStateChange(e) {
-  if (e.data !== YT.PlayerState.ENDED) return;
+// ── 영상 끝 감지 (폴링 방식) ─────────────────────────────
+let pollTimer = null;
 
+async function onStateChange(e) {
+  if (e.data === YT.PlayerState.PLAYING) {
+    // 재생 시작되면 폴링 시작
+    clearInterval(pollTimer);
+    pollTimer = setInterval(async () => {
+      if (!player) return;
+      try {
+        const duration = player.getDuration();
+        const current  = player.getCurrentTime();
+        if (duration > 0 && current > 0 && duration - current < 1.5) {
+          clearInterval(pollTimer);
+          await onVideoEnded();
+        }
+      } catch(e) {}
+    }, 1000);
+  }
+  if (e.data === YT.PlayerState.ENDED) {
+    clearInterval(pollTimer);
+    await onVideoEnded();
+  }
+}
+
+async function onVideoEnded() {
   const autoDel  = document.getElementById('auto-del').checked;
   const autoNext = document.getElementById('auto-next').checked;
   const finishedKey = playlist[currentIndex] ? playlist[currentIndex].key : null;
@@ -333,6 +355,7 @@ async function onStateChange(e) {
     }, 1000);
   }
 }
+
 
 // ── YouTube API 준비 ──────────────────────────────────────
 window.onYouTubeIframeAPIReady = function() {
