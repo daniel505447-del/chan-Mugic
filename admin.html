@@ -46,7 +46,7 @@ html,body{width:100%;height:100%;background:#0f0f0f;color:#f0f0f0;font-family:'M
 .q-del:hover{color:#f87171}
 .q-empty{font-size:13px;color:#444;text-align:center;padding:24px 0}
 #add-section{padding:8px 10px;border-top:1px solid #1e1e1e}
-#add-row{display:flex;gap:5px;margin-bottom:5px}
+#add-row{display:flex;gap:5px}
 #add-name{width:80px;background:#222;border:1px solid #2e2e2e;border-radius:6px;color:#eee;font-family:inherit;font-size:12px;padding:6px 8px;outline:none}
 #add-url{flex:1;background:#222;border:1px solid #2e2e2e;border-radius:6px;color:#eee;font-family:inherit;font-size:12px;padding:6px 8px;outline:none}
 #add-url::placeholder,#add-name::placeholder{color:#444}
@@ -59,8 +59,8 @@ html,body{width:100%;height:100%;background:#0f0f0f;color:#f0f0f0;font-family:'M
 .ctrl.blue:hover{background:#1e40af}
 #player-area{flex:1;display:flex;flex-direction:column;background:#000;min-width:0}
 #video-wrap{position:relative;width:100%;flex:1;background:#000;overflow:hidden}
-#yt-frame{position:absolute;top:0;left:0;width:100%;height:100%;border:none;display:none}
-#placeholder{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+#yt-player-div{position:absolute;top:0;left:0;width:100%;height:100%}
+#placeholder{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:#000;z-index:1}
 #placeholder .icon{font-size:48px;opacity:.2}
 #placeholder p{font-size:14px;color:#444}
 #pcontrols{background:#111;border-top:1px solid #1e1e1e;padding:10px 16px;display:flex;align-items:center;gap:8px;flex-shrink:0;flex-wrap:wrap}
@@ -118,7 +118,7 @@ html,body{width:100%;height:100%;background:#0f0f0f;color:#f0f0f0;font-family:'M
           <div class="icon">▶</div>
           <p>재생 버튼을 눌러 시작하세요</p>
         </div>
-        <iframe id="yt-frame" allowfullscreen allow="autoplay; encrypted-media"></iframe>
+        <div id="yt-player-div"></div>
       </div>
       <div id="pcontrols">
         <div id="now-info">
@@ -134,10 +134,8 @@ html,body{width:100%;height:100%;background:#0f0f0f;color:#f0f0f0;font-family:'M
 </div>
 <div id="toast"></div>
 
-<!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-<!-- YouTube IFrame API -->
 <script src="https://www.youtube.com/iframe_api"></script>
 
 <script>
@@ -152,15 +150,14 @@ const firebaseConfig = {
 // ★ 관리자 비밀번호 ★
 const ADMIN_PASSWORD = "1234";
 
-// ── Firebase 초기화 ──────────────────────────────────────
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-// ── 상태 ────────────────────────────────────────────────
 let playlist = [];
 let currentIndex = -1;
+let player = null;
 let ytReady = false;
-let pendingPlay = false;
+let pendingVid = null;
 
 // ── 로그인 ───────────────────────────────────────────────
 document.getElementById('login-btn').onclick = doLogin;
@@ -177,20 +174,17 @@ function doLogin() {
     document.getElementById('pw-input').value = '';
   }
 }
-
 document.getElementById('logout-btn').onclick = () => location.reload();
 
-// ── Firebase 실시간 ───────────────────────────────────────
+// ── Firebase ─────────────────────────────────────────────
 function initFirebase() {
   db.ref('requests').orderByChild('ts').on('value', snap => {
     const data = snap.val() || {};
     const currentKey = currentIndex >= 0 && playlist[currentIndex] ? playlist[currentIndex].key : null;
     playlist = Object.entries(data)
-      .map(([key, v]) => ({ key, name: v.name||'익명', url: v.url||'', title: v.title || v.url || '로딩중...', ts: v.ts||0 }))
+      .map(([key, v]) => ({ key, name: v.name||'익명', url: v.url||'', title: v.url, ts: v.ts||0 }))
       .sort((a,b) => a.ts - b.ts);
-    playlist.forEach((item, i) => {
-      if (!item.title || item.title === item.url || item.title === '로딩중...') fetchTitle(item, i);
-    });
+    playlist.forEach((item, i) => fetchTitle(item, i));
     if (currentKey) {
       const ni = playlist.findIndex(p => p.key === currentKey);
       currentIndex = ni >= 0 ? ni : Math.min(currentIndex, playlist.length - 1);
@@ -227,13 +221,10 @@ function renderQueue() {
       <button class="q-del" data-key="${p.key}">✕</button>
     </div>`).join('');
   el.querySelectorAll('.q-item').forEach(el => {
-    el.addEventListener('click', e => {
-      if (e.target.classList.contains('q-del')) return;
-      playIndex(parseInt(el.dataset.idx));
-    });
+    el.addEventListener('click', e => { if(!e.target.classList.contains('q-del')) playIndex(parseInt(el.dataset.idx)); });
   });
   el.querySelectorAll('.q-del').forEach(btn => {
-    btn.addEventListener('click', () => deleteItem(btn.dataset.key));
+    btn.addEventListener('click', () => db.ref('requests/'+btn.dataset.key).remove());
   });
   if (currentIndex >= 0) {
     const items = el.querySelectorAll('.q-item');
@@ -247,27 +238,19 @@ function updateHeader() {
   document.getElementById('btn-next').disabled = currentIndex < 0 || currentIndex >= playlist.length - 1;
 }
 
-// ── 삭제 ─────────────────────────────────────────────────
-function deleteItem(key) {
-  db.ref('requests/' + key).remove();
-}
-
+// ── 수동 추가 ────────────────────────────────────────────
 document.getElementById('clear-btn').onclick = () => {
-  if (!playlist.length) return;
-  if (!confirm('모든 신청곡을 삭제할까요?')) return;
-  playlist.forEach(p => db.ref('requests/' + p.key).remove());
+  if (!playlist.length || !confirm('모두 삭제할까요?')) return;
+  playlist.forEach(p => db.ref('requests/'+p.key).remove());
   stopPlayer(); currentIndex = -1;
 };
-
-// ── 수동 추가 ────────────────────────────────────────────
 document.getElementById('add-btn').onclick = addManual;
 document.getElementById('add-url').addEventListener('keydown', e => { if(e.key==='Enter') addManual(); });
 
 function addManual() {
   const name = document.getElementById('add-name').value.trim() || '관리자';
   const url  = document.getElementById('add-url').value.trim();
-  if (!url) { showToast('URL을 입력해 주세요.'); return; }
-  if (!extractId(url)) { showToast('유효한 YouTube URL이 아닙니다.'); return; }
+  if (!url || !extractId(url)) { showToast('유효한 YouTube URL을 입력해 주세요.'); return; }
   db.ref('requests').push({ name, url, ts: firebase.database.ServerValue.TIMESTAMP });
   document.getElementById('add-url').value = '';
   showToast('추가되었습니다!');
@@ -287,20 +270,31 @@ function playIndex(idx) {
   const vid = extractId(playlist[idx].url);
   if (!vid) { showToast('재생할 수 없는 URL입니다.'); return; }
   document.getElementById('placeholder').style.display = 'none';
-  document.getElementById('yt-frame').style.display = 'block';
 
-  // youtube-nocookie + enablejsapi + origin
-  const src = `https://www.youtube.com/embed/${vid}?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1&origin=https://daniel505447-del.github.io`;
-  document.getElementById('yt-frame').src = src;
-
+  if (!ytReady) {
+    pendingVid = vid;
+    return;
+  }
+  if (!player) {
+    player = new YT.Player('yt-player-div', {
+      width: '100%', height: '100%',
+      videoId: vid,
+      playerVars: { autoplay:1, rel:0, modestbranding:1, playsinline:1 },
+      events: {
+        onReady: e => e.target.playVideo(),
+        onStateChange: onStateChange
+      }
+    });
+  } else {
+    player.loadVideoById(vid);
+  }
   updateNowInfo();
   renderQueue();
   updateHeader();
 }
 
 function stopPlayer() {
-  document.getElementById('yt-frame').src = '';
-  document.getElementById('yt-frame').style.display = 'none';
+  if (player) player.stopVideo();
   document.getElementById('placeholder').style.display = '';
   document.getElementById('now-title').textContent = '대기 중...';
   document.getElementById('now-req').textContent = '';
@@ -315,36 +309,50 @@ function updateNowInfo() {
   document.getElementById('prog').textContent = (currentIndex+1) + ' / ' + playlist.length;
 }
 
-// YouTube postMessage로 영상 끝 감지
-// iframe에 주기적으로 상태 요청
-setInterval(() => {
-  const frame = document.getElementById('yt-frame');
-  if (frame && frame.src) {
-    try { frame.contentWindow.postMessage('{"event":"listening","id":1}', '*'); } catch(e){}
-  }
-}, 1000);
-
-window.addEventListener('message', async e => {
-  let data;
-  try { data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; } catch(ex){ return; }
-  const state = data.event === 'onStateChange' ? data.info :
-    (data.info && typeof data.info.playerState !== 'undefined' ? data.info.playerState : null);
-  if (state !== 0) return; // 0 = ended
+// ── 영상 끝 감지 (YT API onStateChange) ──────────────────
+async function onStateChange(e) {
+  if (e.data !== YT.PlayerState.ENDED) return;
 
   const autoDel  = document.getElementById('auto-del').checked;
   const autoNext = document.getElementById('auto-next').checked;
-  const finishedKey = playlist[currentIndex]?.key;
+  const finishedKey = playlist[currentIndex] ? playlist[currentIndex].key : null;
 
   if (autoDel && finishedKey) {
     await db.ref('requests/' + finishedKey).remove();
   }
+
   if (autoNext) {
     setTimeout(() => {
-      if (playlist.length > 0 && currentIndex < playlist.length) playIndex(currentIndex);
-      else { stopPlayer(); currentIndex=-1; showToast('✅ 모든 영상 재생 완료!'); }
+      if (playlist.length > 0 && currentIndex < playlist.length) {
+        playIndex(currentIndex);
+      } else {
+        stopPlayer();
+        currentIndex = -1;
+        showToast('✅ 모든 영상 재생 완료!');
+      }
     }, 1000);
   }
-});
+}
+
+// ── YouTube API 준비 ──────────────────────────────────────
+window.onYouTubeIframeAPIReady = function() {
+  ytReady = true;
+  if (pendingVid) {
+    const vid = pendingVid; pendingVid = null;
+    player = new YT.Player('yt-player-div', {
+      width: '100%', height: '100%',
+      videoId: vid,
+      playerVars: { autoplay:1, rel:0, modestbranding:1, playsinline:1 },
+      events: {
+        onReady: e => e.target.playVideo(),
+        onStateChange: onStateChange
+      }
+    });
+    updateNowInfo();
+    renderQueue();
+    updateHeader();
+  }
+};
 
 // ── 유틸 ─────────────────────────────────────────────────
 function extractId(url) {
