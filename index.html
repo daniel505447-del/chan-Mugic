@@ -12,7 +12,7 @@ body{background:#0f0f0f;color:#f0f0f0;font-family:'Malgun Gothic','Segoe UI',san
 .logo-icon{background:#e00;color:#fff;font-size:16px;font-weight:700;padding:6px 12px;border-radius:8px}
 h1{font-size:22px;font-weight:700;color:#fff}
 .sub{font-size:13px;color:#888;margin-bottom:4px;margin-top:4px}
-.limit-info{font-size:12px;color:#7c3aed;margin-bottom:20px}
+.limit-info{font-size:12px;color:#7c3aed;margin-bottom:20px;min-height:18px}
 label{display:block;font-size:12px;color:#888;margin-bottom:6px;margin-top:18px}
 input{width:100%;background:#222;border:1px solid #333;border-radius:8px;color:#eee;font-family:inherit;font-size:14px;padding:12px 14px;outline:none;transition:border-color .15s}
 input:focus{border-color:#e00}
@@ -41,10 +41,10 @@ input::placeholder{color:#444}
     <h1>챈선전 신청곡</h1>
   </div>
   <div class="sub">YouTube URL을 입력해서 신청하세요!</div>
-  <div class="limit-info" id="limitInfo">1인 최대 3곡까지 신청 가능합니다.</div>
+  <div class="limit-info" id="limitInfo">닉네임당 최대 3곡까지 신청 가능합니다.</div>
 
   <label>닉네임</label>
-  <input type="text" id="name" placeholder="닉네임 입력" maxlength="20">
+  <input type="text" id="name" placeholder="닉네임 입력" maxlength="20" oninput="onNameInput()">
 
   <label>YouTube URL</label>
   <input type="text" id="url" placeholder="https://youtu.be/... 또는 youtube.com/watch?v=...">
@@ -72,30 +72,31 @@ const firebaseConfig = {
   authDomain: "chan-1c62d.firebaseapp.com",
 };
 
-const WORKER_URL = "https://chan-request.daniel5050447.workers.dev";
-
+const LIMIT = 3;
 const app = initializeApp(firebaseConfig);
 const db  = getDatabase(app);
 
-async function checkLimit() {
-  try {
-    const res = await fetch(WORKER_URL + '/check');
-    const data = await res.json();
-    const info = document.getElementById('limitInfo');
-    const btn  = document.getElementById('submitBtn');
-    if (data.remaining <= 0) {
-      info.textContent = '대기 중인 신청곡이 3곡입니다. 재생 완료 후 다시 신청해주세요.';
-      info.style.color = '#f87171';
-      btn.disabled = true;
-    } else {
-      info.textContent = `신청 가능: ${data.remaining}곡 남음 (${data.count}/3)`;
-      info.style.color = data.remaining <= 1 ? '#fb923c' : '#7c3aed';
-      btn.disabled = false;
-    }
-  } catch(e) {}
-}
+let currentPlaylist = [];
 
-checkLimit();
+// 닉네임 입력할 때마다 해당 닉네임의 현재 신청 횟수 표시
+window.onNameInput = function() {
+  const name = document.getElementById('name').value.trim();
+  if (!name) {
+    document.getElementById('limitInfo').textContent = '닉네임당 최대 3곡까지 신청 가능합니다.';
+    document.getElementById('limitInfo').style.color = '#7c3aed';
+    return;
+  }
+  const count = currentPlaylist.filter(p => p.name === name).length;
+  const remaining = LIMIT - count;
+  const info = document.getElementById('limitInfo');
+  if (remaining <= 0) {
+    info.textContent = `"${name}" 닉네임은 이미 3곡을 신청했습니다. 재생 완료 후 다시 신청해주세요.`;
+    info.style.color = '#f87171';
+  } else {
+    info.textContent = `"${name}" 신청 가능: ${remaining}곡 남음 (${count}/3)`;
+    info.style.color = remaining <= 1 ? '#fb923c' : '#7c3aed';
+  }
+};
 
 function extractId(url) {
   try {
@@ -117,33 +118,26 @@ window.submitRequest = async function() {
   const msg  = document.getElementById('msg');
   const btn  = document.getElementById('submitBtn');
   msg.className = 'msg';
+
   if (!name) { msg.textContent='닉네임을 입력해 주세요.'; msg.className='msg err'; return; }
   if (!url)  { msg.textContent='URL을 입력해 주세요.';   msg.className='msg err'; return; }
   if (!extractId(url)) { msg.textContent='유효한 YouTube URL이 아닙니다.'; msg.className='msg err'; return; }
 
+  // 닉네임 기준 3곡 제한 확인
+  const count = currentPlaylist.filter(p => p.name === name).length;
+  if (count >= LIMIT) {
+    msg.textContent = `"${name}" 닉네임은 이미 3곡을 신청했습니다. 재생 완료 후 다시 신청해주세요.`;
+    msg.className = 'msg err';
+    return;
+  }
+
   btn.disabled=true; btn.textContent='신청 중...';
-
   try {
-    // 먼저 Worker에 신청 등록 (IP 제한 확인 + KV 카운트 증가)
-    const limitRes = await fetch(WORKER_URL + '/request', { method: 'POST' });
-    const limitData = await limitRes.json();
-
-    if (!limitData.ok) {
-      msg.textContent = limitData.msg || '신청 한도를 초과했습니다.';
-      msg.className = 'msg err';
-      btn.disabled = false;
-      btn.textContent = '신청하기';
-      checkLimit();
-      return;
-    }
-
-    // Firebase에 신청곡 저장 (IP 없이!)
     await push(ref(db,'requests'), { name, url, ts: serverTimestamp() });
-
     msg.textContent='✅ 신청되었습니다!'; msg.className='msg ok';
     document.getElementById('url').value='';
     setTimeout(()=>{ msg.textContent=''; },3000);
-    checkLimit();
+    window.onNameInput();
   } catch(e) {
     msg.textContent='오류가 발생했습니다.'; msg.className='msg err';
   }
@@ -153,6 +147,7 @@ window.submitRequest = async function() {
 // 실시간 대기열
 onValue(query(ref(db,'requests'), orderByChild('ts')), snap => {
   const data = snap.val() || {};
+  currentPlaylist = Object.values(data).sort((a,b)=>(a.ts||0)-(b.ts||0));
   const items = Object.entries(data).sort((a,b)=>(a[1].ts||0)-(b[1].ts||0));
   document.getElementById('qcount').textContent = items.length + '곡';
   const el = document.getElementById('qlist');
@@ -165,7 +160,7 @@ onValue(query(ref(db,'requests'), orderByChild('ts')), snap => {
         <div class="q-req">신청자: ${esc(v.name)}</div>
       </div>
     </div>`).join('');
-  checkLimit();
+  window.onNameInput();
 });
 
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
