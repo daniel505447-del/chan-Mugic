@@ -21,6 +21,15 @@ html,body{width:100%;height:100%;background:#0f0f0f;color:#f0f0f0;font-family:'M
 .logo-icon{background:#e00;color:#fff;font-size:13px;font-weight:700;padding:4px 10px;border-radius:6px}
 #header h1{font-size:16px;font-weight:600}
 #hbadge{font-size:11px;color:#888;background:#1a1a1a;padding:3px 10px;border-radius:10px;margin-left:auto}
+#ai-mode-wrap{display:flex;align-items:center;gap:8px}
+#ai-mode-label{font-size:12px;color:#888}
+#ai-toggle{position:relative;display:inline-block;width:40px;height:22px}
+#ai-toggle input{opacity:0;width:0;height:0}
+#ai-slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#333;border-radius:22px;transition:.3s}
+#ai-slider:before{position:absolute;content:"";height:16px;width:16px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s}
+#ai-toggle input:checked + #ai-slider{background:#7c3aed}
+#ai-toggle input:checked + #ai-slider:before{transform:translateX(18px)}
+#ai-status{font-size:11px;color:#7c3aed;display:none}
 #logout-btn{font-size:12px;color:#666;background:none;border:1px solid #333;border-radius:6px;padding:4px 10px;cursor:pointer;font-family:inherit}
 #logout-btn:hover{color:#f87171;border-color:#f87171}
 #main{display:flex;flex:1;overflow:hidden}
@@ -35,13 +44,17 @@ html,body{width:100%;height:100%;background:#0f0f0f;color:#f0f0f0;font-family:'M
 .q-item{display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;border-left:3px solid transparent;transition:background .1s}
 .q-item:hover{background:#1a1a1a}
 .q-item.active{background:#1a1a1a;border-left-color:#e00}
+.q-item.ai-item{border-left-color:#7c3aed}
+.q-item.ai-item.active{border-left-color:#7c3aed;background:#1a1a2a}
 .q-num{font-size:11px;color:#555;min-width:18px;text-align:right;flex-shrink:0}
 .q-item.active .q-num{color:#e00}
+.q-item.ai-item .q-num{color:#7c3aed}
 .q-info{flex:1;min-width:0}
 .q-title{font-size:12px;color:#ddd;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .q-item.active .q-title{color:#fff;font-weight:600}
 .q-req{font-size:10px;color:#666;margin-top:1px}
 .q-badge{color:#e00;font-size:10px}
+.ai-badge{color:#7c3aed;font-size:10px}
 .q-del{background:none;border:none;color:#444;font-size:14px;cursor:pointer;padding:2px 5px;border-radius:3px;flex-shrink:0}
 .q-del:hover{color:#f87171}
 .q-empty{font-size:13px;color:#444;text-align:center;padding:24px 0}
@@ -71,6 +84,7 @@ html,body{width:100%;height:100%;background:#0f0f0f;color:#f0f0f0;font-family:'M
 .auto-lbl{font-size:12px;color:#888;display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap}
 .auto-lbl input{accent-color:#e00;cursor:pointer}
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#222;color:#fff;font-size:13px;font-weight:600;padding:10px 22px;border-radius:8px;display:none;z-index:999;border:1px solid #333}
+#ai-log{position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:#1a1a2e;color:#a78bfa;font-size:12px;padding:8px 18px;border-radius:8px;display:none;z-index:999;border:1px solid #4c1d95;max-width:400px;text-align:center}
 </style>
 </head>
 <body>
@@ -90,6 +104,14 @@ html,body{width:100%;height:100%;background:#0f0f0f;color:#f0f0f0;font-family:'M
     <div class="logo-icon">▶</div>
     <h1>챈선전 신청곡 - 관리자</h1>
     <div id="hbadge">대기 0곡</div>
+    <div id="ai-mode-wrap">
+      <span id="ai-mode-label">🤖 AI 모드</span>
+      <label id="ai-toggle">
+        <input type="checkbox" id="ai-checkbox">
+        <span id="ai-slider"></span>
+      </label>
+      <span id="ai-status">ON</span>
+    </div>
     <button id="logout-btn">로그아웃</button>
   </div>
   <div id="main">
@@ -133,31 +155,46 @@ html,body{width:100%;height:100%;background:#0f0f0f;color:#f0f0f0;font-family:'M
   </div>
 </div>
 <div id="toast"></div>
+<div id="ai-log"></div>
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="https://www.youtube.com/iframe_api"></script>
 
 <script>
-// ★ Firebase 설정값 입력 ★
+// ★ 1. Firebase 설정값 ★
 const firebaseConfig = {
   apiKey: "AIzaSyAVUTfLEyC8kuW4jjLjYrjD4Gtw84pKhLg",
   databaseURL: "https://chan-1c62d-default-rtdb.firebaseio.com",
   projectId: "chan-1c62d",
   authDomain: "chan-1c62d.firebaseapp.com",
 };
+// ★ 2. Gemini API 키 ★
+const GEMINI_API_KEY = "AQ.Ab8RN6KQyLEzNP8FTQIL0X7fX1lZFOaf5fzQix4fgVWJ5Eqmpg
+";
 
-// ★ 관리자 비밀번호 ★
+// ★ 3. YouTube Data API 키 ★
+const YOUTUBE_API_KEY = "AIzaSyARfw_GzFW9HSiS_nKm5yO-ElxnwJ4l89U
+";
+
+// ★ 4. 관리자 비밀번호 ★
 const ADMIN_PASSWORD = "1234";
 
+// ── 초기화 ───────────────────────────────────────────────
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-let playlist = [];
+let playlist = [];       // 사람 신청곡
+let aiQueue  = [];       // AI 추천곡 (재생용)
 let currentIndex = -1;
+let currentIsAi  = false;
 let player = null;
 let ytReady = false;
 let pendingVid = null;
+let aiMode = false;
+let aiRunning = false;
+let isEnding = false;
+let pollTimer = null;
 
 // ── 로그인 ───────────────────────────────────────────────
 document.getElementById('login-btn').onclick = doLogin;
@@ -176,72 +213,196 @@ function doLogin() {
 }
 document.getElementById('logout-btn').onclick = () => location.reload();
 
-// ── Firebase ─────────────────────────────────────────────
+// ── AI 모드 토글 ──────────────────────────────────────────
+document.getElementById('ai-checkbox').addEventListener('change', function() {
+  aiMode = this.checked;
+  document.getElementById('ai-status').style.display = aiMode ? 'block' : 'none';
+  if (aiMode) {
+    showAiLog('🤖 AI 모드 ON - 신청곡을 분석해서 자동으로 곡을 추가합니다');
+    triggerAiRecommend();
+  } else {
+    showAiLog('AI 모드 OFF');
+  }
+});
+
+// ── Firebase 실시간 ───────────────────────────────────────
 function initFirebase() {
+  // 사람 신청곡
   db.ref('requests').orderByChild('ts').on('value', snap => {
     const data = snap.val() || {};
-    const currentKey = currentIndex >= 0 && playlist[currentIndex] ? playlist[currentIndex].key : null;
+    const currentKey = !currentIsAi && currentIndex >= 0 && playlist[currentIndex] ? playlist[currentIndex].key : null;
     playlist = Object.entries(data)
-      .map(([key, v]) => ({ key, name: v.name||'익명', url: v.url||'', title: v.url, ts: v.ts||0 }))
+      .map(([key, v]) => ({ key, name: v.name||'익명', url: v.url||'', title: v.url, ts: v.ts||0, isAi: false }))
       .sort((a,b) => a.ts - b.ts);
-    playlist.forEach((item, i) => fetchTitle(item, i));
-    if (currentKey) {
+    playlist.forEach((item, i) => fetchTitle(item, i, false));
+    if (currentKey && !currentIsAi) {
       const ni = playlist.findIndex(p => p.key === currentKey);
-      currentIndex = ni >= 0 ? ni : Math.min(currentIndex, playlist.length - 1);
+      if (ni >= 0) currentIndex = ni;
+    }
+    renderQueue();
+    updateHeader();
+    // AI 모드면 신청곡 변경 시 추천 트리거
+    if (aiMode && playlist.length > 0) triggerAiRecommend();
+  });
+
+  // AI 추천곡 큐
+  db.ref('ai_queue').orderByChild('ts').on('value', snap => {
+    const data = snap.val() || {};
+    const currentKey = currentIsAi && currentIndex >= 0 && aiQueue[currentIndex] ? aiQueue[currentIndex].key : null;
+    aiQueue = Object.entries(data)
+      .map(([key, v]) => ({ key, name: 'AI 추천', url: v.url||'', title: v.title||v.url, ts: v.ts||0, isAi: true }))
+      .sort((a,b) => a.ts - b.ts);
+    if (currentKey && currentIsAi) {
+      const ni = aiQueue.findIndex(p => p.key === currentKey);
+      if (ni >= 0) currentIndex = ni;
     }
     renderQueue();
     updateHeader();
   });
 }
 
-function fetchTitle(item, idx) {
+function fetchTitle(item, idx, isAi) {
   const vid = extractId(item.url);
   if (!vid) return;
   fetch('https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v='+vid+'&format=json')
     .then(r=>r.json()).then(d=>{
-      if (playlist[idx] && playlist[idx].key === item.key) {
-        playlist[idx].title = d.title || item.url;
+      const list = isAi ? aiQueue : playlist;
+      if (list[idx] && list[idx].key === item.key) {
+        list[idx].title = d.title || item.url;
         renderQueue();
         if (idx === currentIndex) updateNowInfo();
       }
     }).catch(()=>{});
 }
 
+// ── AI 추천 ───────────────────────────────────────────────
+async function triggerAiRecommend() {
+  if (aiRunning || !aiMode) return;
+  if (playlist.length === 0) return;
+  // AI 큐에 충분한 곡이 있으면 스킵
+  if (aiQueue.length >= 3) return;
+  aiRunning = true;
+
+  try {
+    showAiLog('🤖 신청곡 분석 중...');
+
+    // 신청곡 최근 20개 제목 수집 (AI 참고용)
+    const recentTitles = playlist.slice(-20).map(p => p.title).filter(t => t && t !== p.url);
+    if (recentTitles.length === 0) { aiRunning = false; return; }
+
+    // Gemini로 추천곡 생성
+    const prompt = `다음은 최근 신청된 노래 목록입니다:
+${recentTitles.map((t,i)=>`${i+1}. ${t}`).join('\n')}
+
+위 노래들의 분위기, 장르, 템포를 분석해서 어울리는 노래 3곡을 추천해주세요.
+반드시 JSON 배열 형식으로만 답변하세요. 다른 텍스트는 절대 포함하지 마세요.
+형식: [{"title":"노래제목","artist":"아티스트명"},{"title":"노래제목","artist":"아티스트명"},{"title":"노래제목","artist":"아티스트명"}]`;
+
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.7, maxOutputTokens: 500 }
+        })
+      }
+    );
+    const geminiData = await geminiRes.json();
+    const text = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+    let songs = [];
+    try {
+      const clean = text.replace(/```json|```/g, '').trim();
+      songs = JSON.parse(clean);
+    } catch(e) { aiRunning = false; return; }
+
+    // YouTube Data API로 실제 URL 검색
+    for (const song of songs.slice(0, 3)) {
+      showAiLog(`🔍 "${song.title} - ${song.artist}" 검색 중...`);
+      const query = encodeURIComponent(song.title + ' ' + song.artist + ' official');
+      const ytRes = await fetch(
+        `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${query}&type=video&maxResults=1&key=${YOUTUBE_API_KEY}`
+      );
+      const ytData = await ytRes.json();
+      const videoId = ytData.items?.[0]?.id?.videoId;
+      const videoTitle = ytData.items?.[0]?.snippet?.title || song.title;
+      if (!videoId) continue;
+
+      const url = 'https://www.youtube.com/watch?v=' + videoId;
+      // AI 큐에 추가 (requests가 아닌 ai_queue에 저장)
+      await db.ref('ai_queue').push({
+        url,
+        title: '[AI] ' + videoTitle,
+        ts: firebase.database.ServerValue.TIMESTAMP
+      });
+      showAiLog(`✅ AI 추천 추가: ${videoTitle}`);
+    }
+  } catch(e) {
+    showAiLog('⚠️ AI 추천 오류: ' + e.message);
+  }
+  aiRunning = false;
+}
+
+function showAiLog(msg) {
+  const el = document.getElementById('ai-log');
+  el.textContent = msg;
+  el.style.display = 'block';
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.style.display = 'none', 4000);
+}
+
 // ── 렌더 ─────────────────────────────────────────────────
 function renderQueue() {
   const el = document.getElementById('queue-list');
-  if (!playlist.length) { el.innerHTML='<div class="q-empty">신청곡이 없습니다</div>'; return; }
-  el.innerHTML = playlist.map((p,i) => `
-    <div class="q-item${i===currentIndex?' active':''}" data-idx="${i}">
+  const combined = [
+    ...playlist.map(p => ({...p, isAi: false})),
+    ...aiQueue.map(p => ({...p, isAi: true}))
+  ];
+  if (!combined.length) { el.innerHTML='<div class="q-empty">신청곡이 없습니다</div>'; return; }
+
+  el.innerHTML = combined.map((p, i) => {
+    const isActive = currentIsAi ? (p.isAi && i - playlist.length === currentIndex) : (!p.isAi && i === currentIndex);
+    return `<div class="q-item${isActive?' active':''}${p.isAi?' ai-item':''}" data-idx="${i}" data-ai="${p.isAi}">
       <div class="q-num">${i+1}</div>
       <div class="q-info">
         <div class="q-title">${esc(p.title)}</div>
-        <div class="q-req">신청자: ${esc(p.name)}${i===currentIndex?' <span class="q-badge">▶</span>':''}</div>
+        <div class="q-req">${p.isAi ? '<span class="ai-badge">🤖 AI 추천</span>' : '신청자: '+esc(p.name)}${isActive?' <span class="q-badge">▶</span>':''}</div>
       </div>
-      <button class="q-del" data-key="${p.key}">✕</button>
-    </div>`).join('');
+      <button class="q-del" data-key="${p.key}" data-ai="${p.isAi}">✕</button>
+    </div>`;
+  }).join('');
+
   el.querySelectorAll('.q-item').forEach(el => {
-    el.addEventListener('click', e => { if(!e.target.classList.contains('q-del')) playIndex(parseInt(el.dataset.idx)); });
+    el.addEventListener('click', e => {
+      if (e.target.classList.contains('q-del')) return;
+      const idx = parseInt(el.dataset.idx);
+      const isAi = el.dataset.ai === 'true';
+      if (isAi) { currentIsAi = true; currentIndex = idx - playlist.length; playCurrentAi(); }
+      else { currentIsAi = false; currentIndex = idx; playCurrentHuman(); }
+    });
   });
   el.querySelectorAll('.q-del').forEach(btn => {
-    btn.addEventListener('click', () => db.ref('requests/'+btn.dataset.key).remove());
+    btn.addEventListener('click', () => {
+      const isAi = btn.dataset.ai === 'true';
+      const path = isAi ? 'ai_queue' : 'requests';
+      db.ref(path + '/' + btn.dataset.key).remove();
+    });
   });
-  if (currentIndex >= 0) {
-    const items = el.querySelectorAll('.q-item');
-    if (items[currentIndex]) items[currentIndex].scrollIntoView({block:'nearest',behavior:'smooth'});
-  }
 }
 
 function updateHeader() {
-  document.getElementById('hbadge').textContent = '대기 ' + playlist.length + '곡';
+  const total = playlist.length + aiQueue.length;
+  document.getElementById('hbadge').textContent = '대기 ' + total + '곡' + (aiQueue.length ? ' (AI '+aiQueue.length+'곡)' : '');
   document.getElementById('btn-prev').disabled = currentIndex <= 0;
-  document.getElementById('btn-next').disabled = currentIndex < 0 || currentIndex >= playlist.length - 1;
+  document.getElementById('btn-next').disabled = currentIndex < 0 || currentIndex >= (currentIsAi ? aiQueue : playlist).length - 1;
 }
 
 // ── 수동 추가 ────────────────────────────────────────────
 document.getElementById('clear-btn').onclick = () => {
-  if (!playlist.length || !confirm('모두 삭제할까요?')) return;
+  if (!confirm('모두 삭제할까요?')) return;
   playlist.forEach(p => db.ref('requests/'+p.key).remove());
+  aiQueue.forEach(p => db.ref('ai_queue/'+p.key).remove());
   stopPlayer(); currentIndex = -1;
 };
 document.getElementById('add-btn').onclick = addManual;
@@ -258,42 +419,70 @@ function addManual() {
 
 // ── 재생 ─────────────────────────────────────────────────
 document.getElementById('btn-play').onclick = () => {
-  if (!playlist.length) { showToast('대기열이 비어있습니다.'); return; }
-  playIndex(0);
+  if (playlist.length === 0 && aiQueue.length === 0) { showToast('대기열이 비어있습니다.'); return; }
+  currentIsAi = playlist.length === 0;
+  currentIndex = 0;
+  currentIsAi ? playCurrentAi() : playCurrentHuman();
 };
-document.getElementById('btn-prev').onclick = () => { if(currentIndex>0) playIndex(currentIndex-1); };
-document.getElementById('btn-next').onclick = () => { if(currentIndex<playlist.length-1) playIndex(currentIndex+1); };
+document.getElementById('btn-prev').onclick = () => { if(currentIndex>0) { currentIndex--; currentIsAi ? playCurrentAi() : playCurrentHuman(); } };
+document.getElementById('btn-next').onclick = () => {
+  const list = currentIsAi ? aiQueue : playlist;
+  if(currentIndex < list.length-1) { currentIndex++; currentIsAi ? playCurrentAi() : playCurrentHuman(); }
+};
 
-function playIndex(idx) {
-  if (idx < 0 || idx >= playlist.length) return;
-  currentIndex = idx;
-  const vid = extractId(playlist[idx].url);
-  if (!vid) { showToast('재생할 수 없는 URL입니다.'); return; }
-  document.getElementById('placeholder').style.display = 'none';
-
-  if (!ytReady) {
-    pendingVid = vid;
-    return;
-  }
-  if (!player) {
-    player = new YT.Player('yt-player-div', {
-      width: '100%', height: '100%',
-      videoId: vid,
-      playerVars: { autoplay:1, rel:0, modestbranding:1, playsinline:1 },
-      events: {
-        onReady: e => e.target.playVideo(),
-        onStateChange: onStateChange
-      }
-    });
-  } else {
-    player.loadVideoById(vid);
-  }
+function playCurrentHuman() {
+  if (currentIndex < 0 || currentIndex >= playlist.length) return;
+  loadVideo(playlist[currentIndex].url);
   updateNowInfo();
   renderQueue();
   updateHeader();
 }
 
+function playCurrentAi() {
+  if (currentIndex < 0 || currentIndex >= aiQueue.length) return;
+  loadVideo(aiQueue[currentIndex].url);
+  updateNowInfo();
+  renderQueue();
+  updateHeader();
+}
+
+function loadVideo(url) {
+  const vid = extractId(url);
+  if (!vid) { showToast('재생할 수 없는 URL입니다.'); return; }
+  document.getElementById('placeholder').style.display = 'none';
+  clearInterval(pollTimer);
+
+  if (!ytReady) { pendingVid = vid; return; }
+  if (!player) {
+    player = new YT.Player('yt-player-div', {
+      width:'100%', height:'100%', videoId: vid,
+      playerVars: { autoplay:1, rel:0, modestbranding:1, playsinline:1 },
+      events: { onReady: e=>e.target.playVideo(), onStateChange: onStateChange }
+    });
+  } else {
+    player.loadVideoById(vid);
+  }
+  // 폴링으로 끝 감지 백업
+  startPollTimer();
+}
+
+function startPollTimer() {
+  clearInterval(pollTimer);
+  pollTimer = setInterval(() => {
+    if (!player) return;
+    try {
+      const dur = player.getDuration();
+      const cur = player.getCurrentTime();
+      if (dur > 0 && cur > 0 && dur - cur < 1.5) {
+        clearInterval(pollTimer);
+        onVideoEnded();
+      }
+    } catch(e){}
+  }, 1000);
+}
+
 function stopPlayer() {
+  clearInterval(pollTimer);
   if (player) player.stopVideo();
   document.getElementById('placeholder').style.display = '';
   document.getElementById('now-title').textContent = '대기 중...';
@@ -302,84 +491,79 @@ function stopPlayer() {
 }
 
 function updateNowInfo() {
-  const p = playlist[currentIndex];
+  const list = currentIsAi ? aiQueue : playlist;
+  const p = list[currentIndex];
   if (!p) return;
   document.getElementById('now-title').textContent = p.title;
-  document.getElementById('now-req').textContent = '신청자: ' + p.name;
-  document.getElementById('prog').textContent = (currentIndex+1) + ' / ' + playlist.length;
+  document.getElementById('now-req').textContent = p.isAi ? '🤖 AI 추천곡' : '신청자: ' + p.name;
+  document.getElementById('prog').textContent = (currentIndex+1) + ' / ' + list.length;
 }
 
-// ── 영상 끝 감지 (폴링 방식) ─────────────────────────────
-let pollTimer = null;
-
-async function onStateChange(e) {
-  if (e.data === YT.PlayerState.PLAYING) {
-    // 재생 시작되면 폴링 시작
-    clearInterval(pollTimer);
-    pollTimer = setInterval(async () => {
-      if (!player) return;
-      try {
-        const duration = player.getDuration();
-        const current  = player.getCurrentTime();
-        if (duration > 0 && current > 0 && duration - current < 1.5) {
-          clearInterval(pollTimer);
-          await onVideoEnded();
-        }
-      } catch(e) {}
-    }, 1000);
-  }
-  if (e.data === YT.PlayerState.ENDED) {
-    clearInterval(pollTimer);
-    await onVideoEnded();
-  }
+// ── 영상 끝 감지 ─────────────────────────────────────────
+function onStateChange(e) {
+  if (e.data === YT.PlayerState.PLAYING) startPollTimer();
+  if (e.data === YT.PlayerState.ENDED) { clearInterval(pollTimer); onVideoEnded(); }
 }
-
-let isEnding = false;
 
 async function onVideoEnded() {
   if (isEnding) return;
   isEnding = true;
   setTimeout(() => isEnding = false, 3000);
-  
+
   const autoDel  = document.getElementById('auto-del').checked;
   const autoNext = document.getElementById('auto-next').checked;
-  const finishedKey = playlist[currentIndex] ? playlist[currentIndex].key : null;
+  const list = currentIsAi ? aiQueue : playlist;
+  const finishedItem = list[currentIndex];
 
-  if (autoDel && finishedKey) {
-    await db.ref('requests/' + finishedKey).remove();
+  if (autoDel && finishedItem) {
+    const path = currentIsAi ? 'ai_queue' : 'requests';
+    await db.ref(path + '/' + finishedItem.key).remove();
   }
 
-  if (autoNext) {
-    setTimeout(() => {
-      if (playlist.length > 0 && currentIndex < playlist.length) {
-        playIndex(currentIndex);
+  if (!autoNext) return;
+
+  setTimeout(() => {
+    // 다음 곡 결정
+    const humanList = playlist;
+    const aiList    = aiQueue;
+
+    // 현재 사람 신청곡이면 → 다음 사람 신청곡 → 없으면 AI 큐
+    if (!currentIsAi) {
+      if (currentIndex < humanList.length) {
+        playCurrentHuman();
+      } else if (aiList.length > 0) {
+        currentIsAi = true; currentIndex = 0; playCurrentAi();
       } else {
-        stopPlayer();
-        currentIndex = -1;
-        showToast('✅ 모든 영상 재생 완료!');
+        stopPlayer(); currentIndex = -1; showToast('✅ 모든 영상 재생 완료!');
       }
-    }, 1000);
-  }
+    } else {
+      // AI 큐 재생 중
+      if (currentIndex < aiList.length) {
+        playCurrentAi();
+        // AI 큐 줄면 다시 추천
+        if (aiList.length <= 1 && aiMode) triggerAiRecommend();
+      } else if (humanList.length > 0) {
+        currentIsAi = false; currentIndex = 0; playCurrentHuman();
+      } else {
+        stopPlayer(); currentIndex = -1; showToast('✅ 모든 영상 재생 완료!');
+        if (aiMode) triggerAiRecommend();
+      }
+    }
+  }, 1000);
 }
 
-
-// ── YouTube API 준비 ──────────────────────────────────────
+// ── YouTube API ───────────────────────────────────────────
 window.onYouTubeIframeAPIReady = function() {
   ytReady = true;
   if (pendingVid) {
     const vid = pendingVid; pendingVid = null;
     player = new YT.Player('yt-player-div', {
-      width: '100%', height: '100%',
-      videoId: vid,
+      width:'100%', height:'100%', videoId: vid,
       playerVars: { autoplay:1, rel:0, modestbranding:1, playsinline:1 },
-      events: {
-        onReady: e => e.target.playVideo(),
-        onStateChange: onStateChange
-      }
+      events: { onReady: e=>e.target.playVideo(), onStateChange: onStateChange }
     });
-    updateNowInfo();
-    renderQueue();
-    updateHeader();
+    startPollTimer();
+    updateNowInfo(); renderQueue(); updateHeader();
   }
 };
 
