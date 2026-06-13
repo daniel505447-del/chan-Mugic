@@ -297,8 +297,7 @@ if (recentTitles.length === 0) { console.log('▶ 제목 없음 종료'); aiRunn
 ${recentTitles.map((t,i)=>`${i+1}. ${t}`).join('\n')}
 
 위 노래들의 분위기, 장르, 템포를 분석해서 어울리는 노래 3곡을 추천해주세요.
-반드시 JSON 배열 형식으로만 답변하세요. 다른 텍스트는 절대 포함하지 마세요.
-형식: [{"title":"노래제목","artist":"아티스트명"},{"title":"노래제목","artist":"아티스트명"},{"title":"노래제목","artist":"아티스트명"}]`;
+JSON만 출력. 설명 없이: [{"title":"제목","artist":"아티스트"},{"title":"제목","artist":"아티스트"},{"title":"제목","artist":"아티스트"}]`;
 
     const geminiRes = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
@@ -307,7 +306,7 @@ ${recentTitles.map((t,i)=>`${i+1}. ${t}`).join('\n')}
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.7, maxOutputTokens: 1024 }
+          generationConfig: { temperature: 0.7, maxOutputTokens: 2028 }
         })
       }
     );
