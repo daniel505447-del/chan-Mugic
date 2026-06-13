@@ -283,9 +283,6 @@ async function triggerAiRecommend() {
 
   try {
     showAiLog('🤖 신청곡 분석 중...');
-    songs = JSON.parse(clean);
-    console.log('Gemini 추천:', songs);
-
     // 신청곡 최근 20개 제목 수집 (AI 참고용)
     const recentTitles = playlist.slice(-20).map(p => p.title).filter(t => t && t !== p.url);
     if (recentTitles.length === 0) { aiRunning = false; return; }
@@ -326,7 +323,6 @@ ${recentTitles.map((t,i)=>`${i+1}. ${t}`).join('\n')}
       );
       const ytData = await ytRes.json();
       const videoId = ytData.items?.[0]?.id?.videoId;
-      console.log('YouTube 결과:', ytData);
       const videoTitle = ytData.items?.[0]?.snippet?.title || song.title;
       if (!videoId) continue;
 
