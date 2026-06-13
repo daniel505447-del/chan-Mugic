@@ -317,7 +317,7 @@ ${recentTitles.map((t,i)=>`${i+1}. ${t}`).join('\n')}
     console.log('▶ Gemini 텍스트:', text);
     let songs = [];
     try {
-      const clean = text.replace(/```json|```/g, '').trim();
+      const clean = text.replace(/```json\n?|```\n?/g, '').trim();
       songs = JSON.parse(clean);
     } catch(e) { aiRunning = false; return; }
 
