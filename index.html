@@ -11,7 +11,8 @@ body{background:#0f0f0f;color:#f0f0f0;font-family:'Malgun Gothic','Segoe UI',san
 .logo{display:flex;align-items:center;gap:10px;margin-bottom:6px}
 .logo-icon{background:#e00;color:#fff;font-size:16px;font-weight:700;padding:6px 12px;border-radius:8px}
 h1{font-size:22px;font-weight:700;color:#fff}
-.sub{font-size:13px;color:#888;margin-bottom:28px;margin-top:4px}
+.sub{font-size:13px;color:#888;margin-bottom:4px;margin-top:4px}
+.limit-info{font-size:12px;color:#7c3aed;margin-bottom:20px}
 label{display:block;font-size:12px;color:#888;margin-bottom:6px;margin-top:18px}
 input{width:100%;background:#222;border:1px solid #333;border-radius:8px;color:#eee;font-family:inherit;font-size:14px;padding:12px 14px;outline:none;transition:border-color .15s}
 input:focus{border-color:#e00}
@@ -40,6 +41,7 @@ input::placeholder{color:#444}
     <h1>챈선전 신청곡</h1>
   </div>
   <div class="sub">YouTube URL을 입력해서 신청하세요!</div>
+  <div class="limit-info" id="limitInfo">1인 최대 3곡까지 신청 가능합니다.</div>
 
   <label>닉네임</label>
   <input type="text" id="name" placeholder="닉네임 입력" maxlength="20">
@@ -63,7 +65,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/fireba
 import { getDatabase, ref, push, onValue, serverTimestamp, query, orderByChild }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
-// ★ 여기에 Firebase 설정값 입력 ★
 const firebaseConfig = {
   apiKey: "AIzaSyAVUTfLEyC8kuW4jjLjYrjD4Gtw84pKhLg",
   databaseURL: "https://chan-1c62d-default-rtdb.firebaseio.com",
@@ -71,8 +72,32 @@ const firebaseConfig = {
   authDomain: "chan-1c62d.firebaseapp.com",
 };
 
+// ★ Cloudflare Worker URL ★
+const WORKER_URL = "https://chan-request.daniel5050447.workers.dev";
+
 const app = initializeApp(firebaseConfig);
 const db  = getDatabase(app);
+
+// 현재 신청 가능 횟수 확인
+async function checkLimit() {
+  try {
+    const res = await fetch(WORKER_URL + '/check');
+    const data = await res.json();
+    const info = document.getElementById('limitInfo');
+    const btn  = document.getElementById('submitBtn');
+    if (data.remaining <= 0) {
+      info.textContent = '대기 중인 신청곡이 3곡입니다. 재생 완료 후 다시 신청해주세요.';
+      info.style.color = '#f87171';
+      btn.disabled = true;
+    } else {
+      info.textContent = `신청 가능: ${data.remaining}곡 남음 (${data.count}/3)`;
+      info.style.color = data.remaining <= 1 ? '#fb923c' : '#7c3aed';
+      btn.disabled = false;
+    }
+  } catch(e) {}
+}
+
+checkLimit();
 
 function extractId(url) {
   try {
@@ -97,12 +122,35 @@ window.submitRequest = async function() {
   if (!name) { msg.textContent='닉네임을 입력해 주세요.'; msg.className='msg err'; return; }
   if (!url)  { msg.textContent='URL을 입력해 주세요.';   msg.className='msg err'; return; }
   if (!extractId(url)) { msg.textContent='유효한 YouTube URL이 아닙니다.'; msg.className='msg err'; return; }
+
   btn.disabled=true; btn.textContent='신청 중...';
+
   try {
-    await push(ref(db,'requests'), { name, url, ts: serverTimestamp() });
+    // IP 제한 확인
+    const limitRes = await fetch(WORKER_URL + '/check');
+    const limitData = await limitRes.json();
+    if (limitData.remaining <= 0) {
+      msg.textContent = '대기 중인 신청곡이 3곡입니다. 재생 완료 후 다시 신청해주세요.';
+      msg.className = 'msg err';
+      btn.disabled = true;
+      return;
+    }
+
+    // Firebase에 신청곡 + IP 저장
+    await push(ref(db,'requests'), {
+      name,
+      url,
+      ip: limitData.ip || 'unknown',
+      ts: serverTimestamp()
+    });
+
+    // Worker에 신청 횟수 기록
+    await fetch(WORKER_URL + '/request', { method: 'POST' });
+
     msg.textContent='✅ 신청되었습니다!'; msg.className='msg ok';
     document.getElementById('url').value='';
     setTimeout(()=>{ msg.textContent=''; },3000);
+    checkLimit();
   } catch(e) {
     msg.textContent='오류가 발생했습니다.'; msg.className='msg err';
   }
@@ -124,6 +172,8 @@ onValue(query(ref(db,'requests'), orderByChild('ts')), snap => {
         <div class="q-req">신청자: ${esc(v.name)}</div>
       </div>
     </div>`).join('');
+  // 재생 완료로 줄어들면 신청 가능 횟수 업데이트
+  checkLimit();
 });
 
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
