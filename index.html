@@ -72,13 +72,11 @@ const firebaseConfig = {
   authDomain: "chan-1c62d.firebaseapp.com",
 };
 
-// ★ Cloudflare Worker URL ★
 const WORKER_URL = "https://chan-request.daniel5050447.workers.dev";
 
 const app = initializeApp(firebaseConfig);
 const db  = getDatabase(app);
 
-// 현재 신청 가능 횟수 확인
 async function checkLimit() {
   try {
     const res = await fetch(WORKER_URL + '/check');
@@ -126,26 +124,21 @@ window.submitRequest = async function() {
   btn.disabled=true; btn.textContent='신청 중...';
 
   try {
-    // IP 제한 확인
-    const limitRes = await fetch(WORKER_URL + '/check');
+    // 먼저 Worker에 신청 등록 (IP 제한 확인 + KV 카운트 증가)
+    const limitRes = await fetch(WORKER_URL + '/request', { method: 'POST' });
     const limitData = await limitRes.json();
-    if (limitData.remaining <= 0) {
-      msg.textContent = '대기 중인 신청곡이 3곡입니다. 재생 완료 후 다시 신청해주세요.';
+
+    if (!limitData.ok) {
+      msg.textContent = limitData.msg || '신청 한도를 초과했습니다.';
       msg.className = 'msg err';
-      btn.disabled = true;
+      btn.disabled = false;
+      btn.textContent = '신청하기';
+      checkLimit();
       return;
     }
 
-    // Firebase에 신청곡 + IP 저장
-    await push(ref(db,'requests'), {
-      name,
-      url,
-      ip: limitData.ip || 'unknown',
-      ts: serverTimestamp()
-    });
-
-    // Worker에 신청 횟수 기록
-    await fetch(WORKER_URL + '/request', { method: 'POST' });
+    // Firebase에 신청곡 저장 (IP 없이!)
+    await push(ref(db,'requests'), { name, url, ts: serverTimestamp() });
 
     msg.textContent='✅ 신청되었습니다!'; msg.className='msg ok';
     document.getElementById('url').value='';
@@ -172,7 +165,6 @@ onValue(query(ref(db,'requests'), orderByChild('ts')), snap => {
         <div class="q-req">신청자: ${esc(v.name)}</div>
       </div>
     </div>`).join('');
-  // 재생 완료로 줄어들면 신청 가능 횟수 업데이트
   checkLimit();
 });
 
