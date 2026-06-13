@@ -288,7 +288,6 @@ async function triggerAiRecommend() {
     // 신청곡 최근 20개 제목 수집 (AI 참고용)
     // 제목 로딩 대기 (최대 5초)
 await new Promise(resolve => setTimeout(resolve, 2000));
-await new Promise(resolve => setTimeout(resolve, 2000));
 const recentTitles = playlist.slice(-20).map(p => p.title).filter(t => t && !t.includes('youtube.com') && !t.includes('youtu.be'));
 console.log('▶ 신청곡 제목들:', recentTitles);
 if (recentTitles.length === 0) { console.log('▶ 제목 없음 종료'); aiRunning = false; return; }
