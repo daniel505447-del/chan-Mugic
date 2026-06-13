@@ -276,7 +276,7 @@ function fetchTitle(item, idx, isAi) {
 // ── AI 추천 ───────────────────────────────────────────────
 async function triggerAiRecommend() {
   if (aiRunning || !aiMode) return;
-  if (playlist.length === 0) return;
+  if (playlist.length === 0 && !(await db.ref('history').once('value')).val()) return;
   // AI 큐에 충분한 곡이 있으면 스킵
   if (aiQueue.length >= 3) return;
   aiRunning = true;
@@ -288,10 +288,15 @@ async function triggerAiRecommend() {
     // 신청곡 최근 20개 제목 수집 (AI 참고용)
     // 제목 로딩 대기 (최대 5초)
 await new Promise(resolve => setTimeout(resolve, 2000));
-const recentTitles = playlist.slice(-20).map(p => p.title).filter(t => t && !t.includes('youtube.com') && !t.includes('youtu.be'));
-console.log('▶ 신청곡 제목들:', recentTitles);
-if (recentTitles.length === 0) { console.log('▶ 제목 없음 종료'); aiRunning = false; return; }
-
+    let recentTitles = playlist.slice(-20).map(p => p.title).filter(t => t && !t.includes('youtube.com') && !t.includes('youtu.be'));
+    // 신청곡 없으면 history에서 가져오기
+    if (recentTitles.length === 0) {
+      const histSnap = await db.ref('history').orderByChild('ts').limitToLast(20).once('value');
+      const histData = histSnap.val() || {};
+      recentTitles = Object.values(histData).map(h => h.title).filter(Boolean);
+    }
+    console.log('▶ 신청곡 제목들:', recentTitles);
+    if (recentTitles.length === 0) { console.log('▶ 제목 없음 종료'); aiRunning = false; return; }
     // Gemini로 추천곡 생성
     const prompt = `다음은 최근 신청된 노래 목록입니다:
 ${recentTitles.map((t,i)=>`${i+1}. ${t}`).join('\n')}
@@ -331,7 +336,7 @@ JSON만 출력. 코드블록 없이. 형식: [{"t":"제목","a":"아티스트"},
       );
       const ytData = await ytRes.json();
       const videoId = ytData.items?.[0]?.id?.videoId;
-      const videoTitle = ytData.items?.[0]?.snippet?.title || song.title;
+      const videoTitle = ytData.items?.[0]?.snippet?.title || title;
       if (!videoId) continue;
 
       const url = 'https://www.youtube.com/watch?v=' + videoId;
@@ -522,9 +527,20 @@ async function onVideoEnded() {
 
   if (autoDel && finishedItem) {
     const path = currentIsAi ? 'ai_queue' : 'requests';
+    // 사람 신청곡이면 history에 저장
+    if (!currentIsAi && finishedItem.title) {
+      await db.ref('history').push({ title: finishedItem.title, ts: firebase.database.ServerValue.TIMESTAMP });
+      // history 최대 50개 유지
+      const histSnap = await db.ref('history').orderByChild('ts').once('value');
+      const histData = histSnap.val() || {};
+      const histKeys = Object.keys(histData).sort((a,b) => histData[a].ts - histData[b].ts);
+      if (histKeys.length > 50) {
+        for (const k of histKeys.slice(0, histKeys.length - 50))
+          await db.ref('history/' + k).remove();
+      }
+    }
     await db.ref(path + '/' + finishedItem.key).remove();
   }
-
   if (!autoNext) return;
 
   setTimeout(() => {
