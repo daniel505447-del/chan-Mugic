@@ -240,7 +240,10 @@ function initFirebase() {
     renderQueue();
     updateHeader();
     // AI 모드면 신청곡 변경 시 추천 트리거
-    if (aiMode && playlist.length > 0) triggerAiRecommend();
+    if (aiMode && playlist.length > 0) {
+  clearTimeout(window._aiTimer);
+  window._aiTimer = setTimeout(triggerAiRecommend, 5000);
+}
   });
 
   // AI 추천곡 큐
